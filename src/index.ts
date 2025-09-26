@@ -1,3 +1,4 @@
+import type { ApiResponse } from './types/ApiResponse';
 /**
  * Welcome to Cloudflare Workers! This is your first worker.
  *
@@ -11,8 +12,86 @@
  * Learn more at https://developers.cloudflare.com/workers/
  */
 
+interface Env {
+	EMPLOYEE_INFO_URL: string;
+	AUTH_HEADER: string;
+}
+
 export default {
-	async fetch(request, env, ctx): Promise<Response> {
-		return new Response('Hello World!');
+	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+		try {
+			const { celular, empresa } = (await request.json()) as { celular: string; empresa: string };
+			const url = env.EMPLOYEE_INFO_URL;
+			const authHeader = env.AUTH_HEADER;
+
+			const response = await fetch(url, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: authHeader,
+				},
+				body: JSON.stringify({
+					celular: celular,
+					empresa: empresa,
+				}),
+			});
+
+			const responseJson: ApiResponse = await response.json();
+			const datos = responseJson.resultado.datos;
+
+			const datosFiltrados = filtrarTalles(datos);
+
+			return new Response(JSON.stringify(datosFiltrados, null, 2), {
+				headers: { 'Content-Type': 'application/json' },
+			});
+		} catch (err: any) {
+			return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+		}
 	},
 } satisfies ExportedHandler<Env>;
+
+// --- Función para filtrar los talles ---
+function filtrarTalles(datos: any) {
+	const codigosEmpleado = {
+		calzado: datos.talle_calzado,
+		pantalon: datos.talle_pantalon,
+		remera: datos.talle_remera,
+		faja: datos.talle_faja,
+	};
+
+	const tallesFiltrados = {};
+
+	interface Talle {
+		codigo: string;
+		[key: string]: any;
+	}
+
+	interface CategoriaTalle {
+		[tipo: string]: Talle[];
+	}
+
+	interface Datos {
+		talle_calzado: string;
+		talle_pantalon: string;
+		talle_remera: string;
+		talle_faja: string;
+		talles: CategoriaTalle[];
+		[key: string]: any;
+	}
+
+	const datosTyped: Datos = datos;
+
+	(datosTyped.talles as CategoriaTalle[]).forEach((categoria: CategoriaTalle) => {
+		for (const tipo in categoria) {
+			const talle = categoria[tipo].find((t: Talle) => t.codigo === codigosEmpleado[tipo as keyof typeof codigosEmpleado]);
+			if (talle) {
+				(tallesFiltrados as { [key: string]: Talle })[tipo] = talle;
+			}
+		}
+	});
+
+	return {
+		...datos,
+		talles: tallesFiltrados,
+	};
+}
