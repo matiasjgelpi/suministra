@@ -110,5 +110,5 @@ export interface Resultado {
 }
 
 export interface ApiResponse {
-  resultado: Resultado;
+  resultado: Resultado | [];
 }

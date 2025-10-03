@@ -1,4 +1,4 @@
-import type { ApiResponse } from './types/ApiResponse';
+import type { ApiResponse, Resultado } from './types/ApiResponse';
 /**
  * Welcome to Cloudflare Workers! This is your first worker.
  *
@@ -31,14 +31,21 @@ export default {
 					Authorization: authHeader,
 				},
 				body: JSON.stringify({
-					celular: celular,
+					celular: limpiarNumero(celular),
 					empresa: empresa,
 				}),
 			});
 
 			const responseJson: ApiResponse = await response.json();
-			const datos = responseJson.resultado.datos;
 
+			if (Array.isArray(responseJson.resultado)) {
+				return new Response(JSON.stringify({ message: 'No se encontró ningún empleado' }), {
+					status: 404,
+					headers: { 'Content-Type': 'application/json' },
+				});
+			}
+
+			const datos = (responseJson.resultado as Resultado).datos;
 			const datosFiltrados = filtrarTalles(datos);
 
 			return new Response(JSON.stringify(datosFiltrados, null, 2), {
@@ -94,4 +101,9 @@ function filtrarTalles(datos: any) {
 		...datos,
 		talles: tallesFiltrados,
 	};
+}
+
+function limpiarNumero(telefono: string): string {
+    // Elimina todo desde el inicio hasta el primer 9 (inclusive)
+    return telefono.replace(/^.*?9/, '');
 }
