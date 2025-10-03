@@ -24,6 +24,9 @@ export default {
 			const url = env.EMPLOYEE_INFO_URL;
 			const authHeader = env.AUTH_HEADER;
 
+			console.log(celular);
+			console.log(limpiarNumero(celular));
+
 			const response = await fetch(url, {
 				method: 'POST',
 				headers: {
@@ -104,6 +107,9 @@ function filtrarTalles(datos: any) {
 }
 
 function limpiarNumero(telefono: string): string {
-    // Elimina todo desde el inicio hasta el primer 9 (inclusive)
-    return telefono.replace(/^.*?9/, '');
+	if (telefono.startsWith('549')) {
+		return telefono.substring(3);
+	}
+
+	return telefono;
 }
