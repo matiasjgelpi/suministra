@@ -107,9 +107,12 @@ function filtrarTalles(datos: any) {
 }
 
 function limpiarNumero(telefono: string): string {
-	if (telefono.startsWith('549')) {
-		return telefono.substring(3);
+
+		const telefonoStr = String(telefono)
+
+	if (telefonoStr.startsWith('549')) {
+		return telefonoStr.substring(3);
 	}
 
-	return telefono;
+	return telefonoStr;
 }
