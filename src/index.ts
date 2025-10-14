@@ -20,26 +20,103 @@ interface Env {
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 		try {
-			const { celular, empresa } = (await request.json()) as { celular: string; empresa: string };
+			if (request.method !== 'POST') {
+				return new Response(JSON.stringify({ error: 'Método no permitido' }), {
+					status: 405,
+					headers: { 'Content-Type': 'application/json' },
+				});
+			}
+
+			const payload = (await request.json()) as {
+				celular?: string;
+				empresa?: number;
+				dni?: string | number;
+				fnac?: string;
+			};
+
 			const url = env.EMPLOYEE_INFO_URL;
 			const authHeader = env.AUTH_HEADER;
 
-			console.log(celular);
-			console.log(limpiarNumero(celular));
+			const empresa = payload.empresa;
 
-			const response = await fetch(url, {
+			const hasPhoneFlow = payload.celular !== undefined && payload.empresa !== undefined;
+			const hasDniDobFlow = payload.dni !== undefined && payload.fnac !== undefined && payload.empresa !== undefined;
+
+			if (!hasPhoneFlow && !hasDniDobFlow) {
+				return new Response(
+					JSON.stringify(
+						{
+							error: 'Parámetros inválidos. Enviá (celular, empresa) ó (dni, fnac, empresa).',
+							ejemplo_phone: { celular: '+54 11 1234-5678', empresa: 1 },
+							ejemplo_dni_fnac: { dni: '30111222', fnac: '1996-12-16', empresa: 1 },
+						},
+						null,
+						2
+					),
+					{
+						status: 400,
+						headers: { 'Content-Type': 'application/json; charset=utf-8' },
+					}
+				);
+			}
+
+			let bodyOut: Record<string, unknown>;
+
+			if (hasPhoneFlow) {
+				const celular = limpiarNumero(payload.celular!);
+				if (!celular) {
+					return new Response(JSON.stringify({ error: 'El número de celular es inválido o quedó vacío tras normalizar.' }), {
+						status: 400,
+						headers: { 'Content-Type': 'application/json; charset=utf-8' },
+					});
+				}
+				bodyOut = { celular, empresa };
+			} else {
+				const dni = String(payload.dni).trim();
+				const fnac = String(payload.fnac).trim();
+
+				if (!/^\d{7,9}$/.test(dni)) {
+					return new Response(JSON.stringify({ error: 'DNI inválido. Debe ser numérico (7 a 9 dígitos).' }), {
+						status: 400,
+						headers: { 'Content-Type': 'application/json; charset=utf-8' },
+					});
+				}
+
+				if (!isValidISODate(fnac)) {
+					return new Response(JSON.stringify({ error: 'fnac inválida. Formato requerido: YYYY-MM-DD (e.g., 1996-12-16).' }), {
+						status: 400,
+						headers: { 'Content-Type': 'application/json; charset=utf-8' },
+					});
+				}
+
+				bodyOut = { dni, fnac, empresa };
+			}
+
+			const upstream = await fetch(url, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
 					Authorization: authHeader,
 				},
-				body: JSON.stringify({
-					celular: limpiarNumero(celular),
-					empresa: empresa,
-				}),
+				body: JSON.stringify(bodyOut),
 			});
 
-			const responseJson: ApiResponse = await response.json();
+			if (!upstream.ok) {
+				const text = await safeText(upstream);
+				return new Response(
+					JSON.stringify({
+						error: 'Error del servicio de empleados',
+						status: upstream.status,
+						detalle: text?.slice(0, 500) ?? null,
+					}),
+					{
+						status: upstream.status,
+						headers: { 'Content-Type': 'application/json; charset=utf-8' },
+					}
+				);
+			}
+
+			const responseJson: ApiResponse = await upstream.json();
 
 			if (Array.isArray(responseJson.resultado)) {
 				return new Response(JSON.stringify({ message: 'No se encontró ningún empleado' }), {
@@ -55,7 +132,10 @@ export default {
 				headers: { 'Content-Type': 'application/json' },
 			});
 		} catch (err: any) {
-			return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+			return new Response(JSON.stringify({ error: err?.message ?? 'Error interno' }), {
+				status: 500,
+				headers: { 'Content-Type': 'application/json; charset=utf-8' },
+			});
 		}
 	},
 } satisfies ExportedHandler<Env>;
@@ -107,12 +187,28 @@ function filtrarTalles(datos: any) {
 }
 
 function limpiarNumero(telefono: string): string {
-
-		const telefonoStr = String(telefono)
+	const telefonoStr = String(telefono);
 
 	if (telefonoStr.startsWith('549')) {
 		return telefonoStr.substring(3);
 	}
 
 	return telefonoStr;
+}
+
+// Valida YYYY-MM-DD estricto y que sea una fecha real (no 2025-02-31, etc.)
+function isValidISODate(s: string): boolean {
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+	const [y, m, d] = s.split('-').map(Number);
+	const dt = new Date(Date.UTC(y, m - 1, d));
+	return dt.getUTCFullYear() === y && dt.getUTCMonth() + 1 === m && dt.getUTCDate() === d;
+}
+
+// Evita excepción si el upstream no trae JSON y queremos ver algo del body
+async function safeText(res: Response): Promise<string | null> {
+	try {
+		return await res.text();
+	} catch {
+		return null;
+	}
 }
