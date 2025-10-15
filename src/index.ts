@@ -128,7 +128,9 @@ export default {
 			const datos = (responseJson.resultado as Resultado).datos;
 			const datosFiltrados = filtrarTalles(datos);
 
-			return new Response(JSON.stringify(datosFiltrados, null, 2), {
+			const { token, ...datosSinToken } = datosFiltrados;
+
+			return new Response(JSON.stringify(datosSinToken, null, 2), {
 				headers: { 'Content-Type': 'application/json' },
 			});
 		} catch (err: any) {
