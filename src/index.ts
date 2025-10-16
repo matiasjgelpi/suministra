@@ -120,7 +120,6 @@ export default {
 
 			if (Array.isArray(responseJson.resultado)) {
 				return new Response(JSON.stringify({ message: 'No se encontró ningún empleado' }), {
-					status: 404,
 					headers: { 'Content-Type': 'application/json' },
 				});
 			}
